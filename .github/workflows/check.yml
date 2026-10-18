@@ -8,4 +8,4 @@ jobs:
       - run: bash -n logkeeper.sh
       - run: shellcheck logkeeper.sh
       - run: sudo apt-get update -qq && sudo apt-get install -y logrotate
-      - run: python3 tests/test_logkeeper.py
+      - run: sudo python3 tests/test_logkeeper.py

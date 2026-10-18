@@ -120,6 +120,8 @@ esac
         self.assertNotIn('unbound variable', result.stderr)
 
     def test_real_logrotate_accepts_generated_policy(self):
+        if os.geteuid() != 0:
+            self.skipTest('native root policy requires root; CI runs this test as root')
         executable = shutil.which('logrotate')
         if not executable:
             self.skipTest('logrotate is not installed')

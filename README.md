@@ -5,7 +5,7 @@
 ## نصب و اجرا
 
 ```bash
-curl -fL https://raw.githubusercontent.com/Mehdi682007/server-logkeeper/main/logkeeper.sh -o logkeeper.sh
+curl -fL https://raw.githubusercontent.com/Mehdi682007/server-logkeeper/main/logkeeper.sh -o logkeeper.sh &&
 sudo bash logkeeper.sh
 ```
 
