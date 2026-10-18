@@ -112,6 +112,21 @@ esac
         self.assertEqual(self.file('/etc/logrotate.d/rsyslog').read_text(), before)
         self.assertIn('MAX_MB=100', self.file('/etc/server-logkeeper.conf').read_text())
 
+    def test_first_install_failure_restores_original(self):
+        result = self.run_action('configure', '\n\n\n\nYES\n', {'TEST_ROTATE_EXIT': '1'})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.file('/etc/logrotate.d/rsyslog').read_text(), self.original)
+        self.assertFalse(self.file('/etc/logrotate-x-ui.conf').exists())
+        self.assertNotIn('unbound variable', result.stderr)
+
+    def test_real_logrotate_accepts_generated_policy(self):
+        executable = shutil.which('logrotate')
+        if not executable:
+            self.skipTest('logrotate is not installed')
+        self.install()
+        result = subprocess.run([executable, '--debug', '--state', str(self.root / 'test-state'), str(self.file('/etc/logrotate-x-ui.conf'))], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_config_is_not_executed(self):
         marker = self.root / 'pwned'
         self.file('/etc/server-logkeeper.conf').write_text(f'MAX_MB=$(touch {marker})\n')

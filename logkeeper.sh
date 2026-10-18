@@ -99,12 +99,23 @@ restore_files() {
   done
 }
 restore_timers() {
-  local t
+  local t baseline=${1:-$STATE}
   systemctl daemon-reload
   for t in x-ui-logrotate.timer logrotate.timer; do
-    if grep -qx enabled "$STATE/$t.enabled"; then systemctl enable "$t" >/dev/null; else systemctl disable "$t" >/dev/null 2>&1 || true; fi
-    if grep -qx active "$STATE/$t.active"; then systemctl restart "$t"; else systemctl stop "$t" 2>/dev/null || true; fi
+    if grep -qx enabled "$baseline/$t.enabled"; then systemctl enable "$t" >/dev/null; else systemctl disable "$t" >/dev/null 2>&1 || true; fi
+    if grep -qx active "$baseline/$t.active"; then systemctl restart "$t"; else systemctl stop "$t" 2>/dev/null || true; fi
   done
+}
+rollback_apply() {
+  local rc=$1 txn=$2 p
+  if (( rc != 0 )); then
+    for p in "${FILES[@]}" "$CONF" "$BIN"; do
+      if [[ -f $txn$p ]]; then cp -p -- "$txn$p" "$p"; else rm -f -- "$p"; fi
+    done
+    restore_timers "$txn"
+    systemctl restart systemd-journald || true
+    echo 'Apply failed; previous configuration restored.' >&2
+  fi
 }
 configure() {
   root; platform; lock; load
@@ -127,11 +138,16 @@ configure() {
   # A separate transaction snapshot rolls failed updates back to their immediate prior state.
   local txn p
   txn=$(mktemp -d "$STATE/transaction.XXXXXX")
-  for p in "${FILES[@]}" "$CONF"; do
+  for p in "${FILES[@]}" "$CONF" "$BIN"; do
     [[ ! -L $p ]] || die "Refusing symlink: $p"
     if [[ -f $p ]]; then mkdir -p "$txn$(dirname "$p")"; cp -p -- "$p" "$txn$p"; fi
   done
-  trap 'rc=$?; if (( rc != 0 )); then for p in "${FILES[@]}" "$CONF"; do if [[ -f $txn$p ]]; then cp -p -- "$txn$p" "$p"; else rm -f -- "$p"; fi; done; systemctl daemon-reload; systemctl start logrotate.timer; [[ ! -f /etc/systemd/system/x-ui-logrotate.timer ]] || systemctl start x-ui-logrotate.timer; echo "Apply failed; previous configuration restored." >&2; fi' EXIT
+  for p in x-ui-logrotate.timer logrotate.timer; do
+    systemctl is-enabled "$p" > "$txn/$p.enabled" 2>/dev/null || true
+    systemctl is-active "$p" > "$txn/$p.active" 2>/dev/null || true
+  done
+  APPLY_TXN=$txn
+  trap 'rollback_apply "$?" "$APPLY_TXN"' EXIT
   # Stop schedules and wait for active jobs before editing their configuration.
   systemctl stop x-ui-logrotate.timer logrotate.timer 2>/dev/null || true
   local _attempt
@@ -200,7 +216,7 @@ KEEP=$KEEP
 INTERVAL=$INTERVAL
 JOURNAL_MB=$JOURNAL_MB
 EOF
-  if [[ $(readlink -f "${BASH_SOURCE[0]}") != "$BIN" ]]; then install -m 755 -- "${BASH_SOURCE[0]}" "$BIN"; fi
+  if [[ $(readlink -f "${BASH_SOURCE[0]}") != "$BIN" ]]; then install -D -m 755 -- "${BASH_SOURCE[0]}" "$BIN"; fi
   systemctl daemon-reload
   systemctl enable --now x-ui-logrotate.timer logrotate.timer
   systemctl restart x-ui-logrotate.timer logrotate.timer systemd-journald
